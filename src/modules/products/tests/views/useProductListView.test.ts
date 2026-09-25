@@ -48,6 +48,18 @@ describe('useProductListView', () => {
     expect(result.current.edit.productId).toBeNull()
   })
 
+  it('remove.open sets the product and onOpenChange(false) clears it', async () => {
+    const { result } = renderListHook()
+    await waitFor(() => expect(result.current.status).toBe('succeeded'))
+    const keyboard = buildProduct({ name: 'Keyboard' })
+
+    act(() => result.current.remove.open(keyboard))
+    expect(result.current.remove.product).toEqual(keyboard)
+
+    act(() => result.current.remove.onOpenChange(false))
+    expect(result.current.remove.product).toBeNull()
+  })
+
   it('edit.onNotFound fetches the current page again', async () => {
     const pages: (string | null)[] = []
     server.use(

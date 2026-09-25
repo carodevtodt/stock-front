@@ -1,4 +1,4 @@
-import { Pencil } from 'lucide-react'
+import { Pencil, Trash2 } from 'lucide-react'
 import { Button } from '@/shared/components/ui/button'
 import { Skeleton } from '@/shared/components/ui/skeleton'
 import {
@@ -19,9 +19,10 @@ interface Props {
   products: Product[]
   isLoading?: boolean
   onEdit: (product: Product) => void
+  onDelete: (product: Product) => void
 }
 
-export function ProductTable({ products, isLoading = false, onEdit }: Props) {
+export function ProductTable({ products, isLoading = false, onEdit, onDelete }: Props) {
   return (
     <Table>
       <TableHeader className="bg-muted">
@@ -61,6 +62,15 @@ export function ProductTable({ products, isLoading = false, onEdit }: Props) {
                       onClick={() => onEdit(product)}
                     >
                       <Pencil aria-hidden />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="text-destructive hover:text-destructive"
+                      aria-label={`Delete ${product.name}`}
+                      onClick={() => onDelete(product)}
+                    >
+                      <Trash2 aria-hidden />
                     </Button>
                   </div>
                 </TableCell>

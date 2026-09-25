@@ -1,7 +1,7 @@
 import { createSlice } from '@reduxjs/toolkit'
 import { LIST_PRODUCTS_ERROR, PAGE_SIZE } from '../constants'
 import type { Product } from '../types/product'
-import { createProduct, fetchProducts, updateProduct } from './productsThunks'
+import { createProduct, deleteProduct, fetchProducts, updateProduct } from './productsThunks'
 
 export interface ProductsState {
   items: Product[]
@@ -9,6 +9,14 @@ export interface ProductsState {
   count: number
   status: 'idle' | 'loading' | 'succeeded' | 'failed'
   error: string | null
+}
+
+/** Drop a product that no longer exists from the current page. */
+function removeItem(state: ProductsState, id: string) {
+  const index = state.items.findIndex((item) => item.id === id)
+  if (index === -1) return
+  state.items.splice(index, 1)
+  state.count -= 1
 }
 
 const initialState: ProductsState = {
@@ -54,6 +62,13 @@ export const productsSlice = createSlice({
       .addCase(updateProduct.fulfilled, (state, action) => {
         const index = state.items.findIndex((item) => item.id === action.payload.id)
         if (index !== -1) state.items[index] = action.payload
+      })
+      .addCase(deleteProduct.fulfilled, (state, action) => {
+        removeItem(state, action.payload)
+      })
+      // 404: another user already deleted it, so it's gone from the page too.
+      .addCase(deleteProduct.rejected, (state, action) => {
+        if (action.payload?.status === 404) removeItem(state, action.meta.arg)
       })
   },
 })

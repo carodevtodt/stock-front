@@ -19,4 +19,5 @@ export const productsHandlers = [
     const body = (await request.json()) as UpdateProductInput
     return HttpResponse.json(buildProduct({ id: params.id as string, ...body }))
   }),
+  http.delete(`${productsUrl}:id/`, () => new HttpResponse(null, { status: 204 })),
 ]

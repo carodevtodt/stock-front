@@ -1,6 +1,11 @@
 import { LIST_PRODUCTS_ERROR } from '../../constants'
 import { productsSlice } from '../../store/productsSlice'
-import { createProduct, fetchProducts, updateProduct } from '../../store/productsThunks'
+import {
+  createProduct,
+  deleteProduct,
+  fetchProducts,
+  updateProduct,
+} from '../../store/productsThunks'
 import { buildCreateProductInput, buildProduct, buildProductsPage } from '../mocks/product.factory'
 
 const reducer = productsSlice.reducer
@@ -151,6 +156,64 @@ describe('productsSlice updateProduct', () => {
       state,
       updateProduct.rejected(null, 'request-id', { id: 'x', input: buildCreateProductInput() }, error),
     )
+
+    expect(next).toEqual(state)
+  })
+})
+
+describe('productsSlice deleteProduct', () => {
+  const loaded = (items: ReturnType<typeof buildProduct>[]) => ({
+    ...reducer(undefined, { type: '@@INIT' }),
+    items,
+    page: 2,
+    count: 13,
+    status: 'succeeded' as const,
+  })
+  const notFound = { status: 404, message: 'Product not found.', fieldErrors: {} }
+
+  it('removes the item and lowers count on delete fulfilled', () => {
+    const [a, b, c] = ['A', 'B', 'C'].map((name) => buildProduct({ name }))
+
+    const next = reducer(loaded([a, b, c]), deleteProduct.fulfilled(b.id, 'request-id', b.id))
+
+    expect(next.items).toEqual([a, c])
+    expect(next).toMatchObject({ count: 12, page: 2, status: 'succeeded' })
+  })
+
+  it('removes the item on delete rejected with 404', () => {
+    const [a, b, c] = ['A', 'B', 'C'].map((name) => buildProduct({ name }))
+
+    const next = reducer(
+      loaded([a, b, c]),
+      deleteProduct.rejected(null, 'request-id', b.id, notFound),
+    )
+
+    expect(next.items).toEqual([a, c])
+    expect(next.count).toBe(12)
+  })
+
+  it('leaves the state alone when the deleted id is not on the page', () => {
+    const state = loaded([buildProduct()])
+    const id = crypto.randomUUID()
+
+    const next = reducer(state, deleteProduct.fulfilled(id, 'request-id', id))
+
+    expect(next).toEqual(state)
+  })
+})
+
+describe('productsSlice deleteProduct errors', () => {
+  it('does not change the state on delete rejected with 500', () => {
+    const product = buildProduct()
+    const state = {
+      ...reducer(undefined, { type: '@@INIT' }),
+      items: [product],
+      count: 1,
+      status: 'succeeded' as const,
+    }
+    const error = { status: 500, message: 'boom', fieldErrors: {} }
+
+    const next = reducer(state, deleteProduct.rejected(null, 'request-id', product.id, error))
 
     expect(next).toEqual(state)
   })

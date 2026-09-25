@@ -596,3 +596,227 @@ describe('ProductListView edit not found', () => {
     })
   })
 })
+
+/**
+ * Stateful fake backend: GET serves `products` in pages of 10 and DELETE removes a product
+ * (204), or answers 404 when it's already gone. Records list pages and deleted ids.
+ */
+function serveDeletableCatalog(products: Product[]) {
+  const catalog = [...products]
+  const pages: string[] = []
+  const deletes: string[] = []
+  server.use(
+    http.get(productsUrl, ({ request }) => {
+      const page = Number(new URL(request.url).searchParams.get('page'))
+      pages.push(String(page))
+      const results = catalog.slice((page - 1) * 10, page * 10)
+      return HttpResponse.json(buildProductsPage(results, { count: catalog.length, page }))
+    }),
+    http.delete(`${productsUrl}:id/`, ({ params }) => {
+      deletes.push(params.id as string)
+      const index = catalog.findIndex((p) => p.id === params.id)
+      if (index === -1) return HttpResponse.json({ detail: 'Product not found.' }, { status: 404 })
+      catalog.splice(index, 1)
+      return new HttpResponse(null, { status: 204 })
+    }),
+  )
+  return { catalog, pages, deletes }
+}
+
+/** Products named "P01", "P02", … in list order (newest first). */
+function namedProducts(count: number) {
+  return Array.from({ length: count }, (_, i) =>
+    buildProduct({ name: `P${String(i + 1).padStart(2, '0')}` }),
+  )
+}
+
+/** Click the row's Delete button and return the confirmation dialog. */
+async function openDeleteConfirm(user: ReturnType<typeof userEvent.setup>, name: string) {
+  await user.click(await screen.findByRole('button', { name: `Delete ${name}` }))
+  return screen.findByRole('alertdialog', { name: 'Delete product?' })
+}
+
+describe('ProductListView delete', () => {
+  it('shows a Delete button named after the product in each row', async () => {
+    serveDeletableCatalog([keyboard(), mouse()])
+    renderProductsPage()
+
+    const [first, second] = await findProductRows()
+
+    expect(within(first).getByRole('button', { name: 'Delete Keyboard' })).toBeInTheDocument()
+    expect(within(second).getByRole('button', { name: 'Delete Mouse' })).toBeInTheDocument()
+  })
+
+  it('opens "Delete product?" for the row\'s product without sending a request', async () => {
+    const { deletes } = serveDeletableCatalog([keyboard(), mouse()])
+    const { user } = renderProductsPage()
+
+    const dialog = await openDeleteConfirm(user, 'Keyboard')
+
+    expect(within(dialog).getByText('"Keyboard" will be permanently deleted.')).toBeInTheDocument()
+    expect(deletes).toEqual([])
+  })
+
+  it('closes the confirmation and keeps the row when Cancel is clicked', async () => {
+    const { deletes } = serveDeletableCatalog([keyboard(), mouse()])
+    const { user } = renderProductsPage()
+    const dialog = await openDeleteConfirm(user, 'Keyboard')
+
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    expect(deletes).toEqual([])
+    expect(rowTexts((await findProductRows())[0])[0]).toBe('Keyboard')
+  })
+
+  it('closes the confirmation without a delete request when Escape is pressed', async () => {
+    const { deletes } = serveDeletableCatalog([keyboard(), mouse()])
+    const { user } = renderProductsPage()
+    await openDeleteConfirm(user, 'Keyboard')
+
+    await user.keyboard('{Escape}')
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    expect(deletes).toEqual([])
+  })
+
+  it('names the second product after cancelling the first confirmation', async () => {
+    serveDeletableCatalog([keyboard(), mouse()])
+    const { user } = renderProductsPage()
+    const first = await openDeleteConfirm(user, 'Keyboard')
+    await user.click(within(first).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+
+    const second = await openDeleteConfirm(user, 'Mouse')
+
+    expect(within(second).getByText('"Mouse" will be permanently deleted.')).toBeInTheDocument()
+  })
+})
+
+describe('ProductListView delete confirm', () => {
+  it('shows "Product deleted.", closes the confirmation and removes the row', async () => {
+    const { pages } = serveDeletableCatalog([keyboard(), mouse()])
+    const { user } = renderProductsPage()
+    const dialog = await openDeleteConfirm(user, 'Keyboard')
+
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
+
+    expect(await screen.findByText('Product deleted.')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    await waitFor(() => {
+      const rows = within(screen.getByRole('table')).getAllByRole('row').slice(1)
+      expect(rows.map((row) => rowTexts(row)[0])).toEqual(['Mouse'])
+    })
+    expect(screen.getByText('Showing 1–1 of 1')).toBeInTheDocument()
+    expect(pages).toEqual(['1'])
+  })
+
+  it('shows "Product no longer exists." and removes the row when the product is already gone', async () => {
+    const { catalog } = serveDeletableCatalog([keyboard(), mouse()])
+    const { user } = renderProductsPage()
+    await findProductRows()
+    catalog.splice(0, 1) // deleted by someone else after the list loaded
+    const dialog = await openDeleteConfirm(user, 'Keyboard')
+
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
+
+    expect(await screen.findByText('Product no longer exists.')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    await waitFor(() => {
+      const rows = within(screen.getByRole('table')).getAllByRole('row').slice(1)
+      expect(rows.map((row) => rowTexts(row)[0])).toEqual(['Mouse'])
+    })
+  })
+})
+
+describe('ProductListView delete error', () => {
+  it('keeps the row when the delete fails', async () => {
+    serveDeletableCatalog([keyboard(), mouse()])
+    server.use(
+      http.delete(`${productsUrl}:id/`, () => HttpResponse.json({ detail: 'boom' }, { status: 500 })),
+    )
+    const { user } = renderProductsPage()
+    const dialog = await openDeleteConfirm(user, 'Keyboard')
+
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
+
+    expect(await screen.findByText('Could not delete product.')).toBeInTheDocument()
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument())
+    expect(rowTexts((await findProductRows())[0])[0]).toBe('Keyboard')
+  })
+})
+
+describe('ProductListView page after a delete', () => {
+  async function deleteProduct(user: ReturnType<typeof userEvent.setup>, name: string) {
+    const dialog = await openDeleteConfirm(user, name)
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
+    await screen.findByText('Product deleted.')
+  }
+
+  async function goToPage(user: ReturnType<typeof userEvent.setup>, page: string) {
+    await findProductRows()
+    await user.click(paginationNav().getByRole('link', { name: page }))
+    await waitFor(() =>
+      expect(paginationNav().getByRole('link', { name: page })).toHaveAttribute(
+        'aria-current',
+        'page',
+      ),
+    )
+    await findProductRows()
+  }
+
+  const shownNames = () =>
+    within(screen.getByRole('table'))
+      .getAllByRole('row')
+      .slice(1)
+      .map((row) => rowTexts(row)[0])
+
+  it('requests page 1 again and shows "Showing 1–10 of 24" after a delete with more pages', async () => {
+    const { pages } = serveDeletableCatalog(namedProducts(25))
+    const { user } = renderProductsPage()
+
+    await deleteProduct(user, 'P01')
+
+    await waitFor(() => expect(screen.getByText('Showing 1–10 of 24')).toBeInTheDocument())
+    await waitFor(() => expect(shownNames()).toHaveLength(10))
+    expect(shownNames()[0]).toBe('P02')
+    expect(shownNames()[9]).toBe('P11')
+    expect(pages).toEqual(['1', '1'])
+  })
+
+  it('sends no list request and shows "Showing 21–24 of 24" after a delete on the last page', async () => {
+    const { pages } = serveDeletableCatalog(namedProducts(25))
+    const { user } = renderProductsPage()
+    await goToPage(user, '3')
+
+    await deleteProduct(user, 'P21')
+
+    await waitFor(() => expect(screen.getByText('Showing 21–24 of 24')).toBeInTheDocument())
+    expect(shownNames()).toEqual(['P22', 'P23', 'P24', 'P25'])
+    expect(pages).toEqual(['1', '3'])
+  })
+
+  it('shows page 2 after deleting the only product on page 3', async () => {
+    const { pages } = serveDeletableCatalog(namedProducts(21))
+    const { user } = renderProductsPage()
+    await goToPage(user, '3')
+
+    await deleteProduct(user, 'P21')
+
+    await waitFor(() => expect(screen.getByText('Showing 11–20 of 20')).toBeInTheDocument())
+    expect(paginationNav().getByRole('link', { name: '2' })).toHaveAttribute('aria-current', 'page')
+    expect(pages.at(-1)).toBe('2')
+  })
+
+  it('shows the empty state without a list request after deleting the last product', async () => {
+    const { pages } = serveDeletableCatalog([keyboard()])
+    const { user } = renderProductsPage()
+
+    await deleteProduct(user, 'Keyboard')
+
+    expect(await screen.findByText('No products yet, please add one.')).toBeInTheDocument()
+    expect(pages).toEqual(['1'])
+  })
+})

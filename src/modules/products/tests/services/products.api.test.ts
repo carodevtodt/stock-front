@@ -2,6 +2,7 @@ import { http, HttpResponse } from 'msw'
 import { server } from '@/test/server'
 import {
   createProduct,
+  deleteProduct,
   getProduct,
   listProducts,
   updateProduct,
@@ -121,6 +122,38 @@ describe('products.api updateProduct', () => {
       method: 'PUT',
       path: `/api/products/${product.id}/`,
       body: input,
+    })
+  })
+})
+
+describe('products.api deleteProduct', () => {
+  it('DELETEs /products/{id}/ and resolves on 204', async () => {
+    const id = crypto.randomUUID()
+    let received: { method: string; path: string } | null = null
+    server.use(
+      http.delete(productUrl(id), ({ request }) => {
+        received = { method: request.method, path: new URL(request.url).pathname }
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+
+    const result = await deleteProduct(id)
+
+    expect(result).toBeUndefined()
+    expect(received).toEqual({ method: 'DELETE', path: `/api/products/${id}/` })
+  })
+
+  it('rejects deleteProduct with status 404 and the detail message', async () => {
+    const id = crypto.randomUUID()
+    server.use(
+      http.delete(productUrl(id), () =>
+        HttpResponse.json({ detail: 'Product not found.' }, { status: 404 }),
+      ),
+    )
+
+    await expect(deleteProduct(id)).rejects.toMatchObject({
+      status: 404,
+      message: 'Product not found.',
     })
   })
 })

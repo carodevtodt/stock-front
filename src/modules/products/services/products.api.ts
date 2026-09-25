@@ -16,3 +16,5 @@ export const getProduct = (id: string) => http.get<Product>(`/products/${id}/`)
 
 export const updateProduct = (id: string, input: UpdateProductInput) =>
   http.put<Product>(`/products/${id}/`, input)
+
+export const deleteProduct = (id: string) => http.delete<void>(`/products/${id}/`)

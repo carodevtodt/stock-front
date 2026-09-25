@@ -1,4 +1,5 @@
 import { AddProductButton } from './components/AddProductButton'
+import { DeleteProductDialog } from './components/DeleteProductDialog'
 import { ProductFormModal } from './components/ProductFormModal'
 import { ProductsEmptyState } from './components/ProductsEmptyState'
 import { ProductsLoadError } from './components/ProductsLoadError'
@@ -19,6 +20,7 @@ export function ProductListView() {
     retry,
     form,
     edit,
+    remove,
   } = useProductListView()
   const isLoading = status === 'idle' || status === 'loading'
   const isEmpty = status === 'succeeded' && count === 0
@@ -35,6 +37,7 @@ export function ProductListView() {
           products={products}
           isLoading={isLoading}
           onEdit={(product) => edit.open(product.id)}
+          onDelete={remove.open}
         />
         {count > 0 && (
           <ProductsPagination
@@ -65,6 +68,11 @@ export function ProductListView() {
         productId={edit.productId}
         onOpenChange={edit.onOpenChange}
         onNotFound={edit.onNotFound}
+      />
+      <DeleteProductDialog
+        product={remove.product}
+        onOpenChange={remove.onOpenChange}
+        onDeleted={remove.onDeleted}
       />
     </section>
   )

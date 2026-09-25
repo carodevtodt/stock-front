@@ -8,7 +8,8 @@ import {
   selectProductsStatus,
   selectTotalPages,
 } from '../../store/productsSelectors'
-import { fetchProducts } from '../../store/productsThunks'
+import { fetchProducts, refillPageAfterDelete } from '../../store/productsThunks'
+import type { Product } from '../../types/product'
 
 export function useProductListView() {
   const dispatch = useAppDispatch()
@@ -20,6 +21,7 @@ export function useProductListView() {
   const error = useAppSelector(selectProductsError)
   const [isFormOpen, setFormOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState<Product | null>(null)
 
   useEffect(() => {
     dispatch(fetchProducts(1))
@@ -50,6 +52,14 @@ export function useProductListView() {
         if (!open) setEditingId(null)
       },
       onNotFound: () => dispatch(fetchProducts(page)),
+    },
+    remove: {
+      product: deleting,
+      open: (product: Product) => setDeleting(product),
+      onOpenChange: (open: boolean) => {
+        if (!open) setDeleting(null)
+      },
+      onDeleted: () => dispatch(refillPageAfterDelete()),
     },
   }
 }
