@@ -1,8 +1,13 @@
 import { http, HttpResponse } from 'msw'
 import { server } from '@/test/server'
-import { createProduct, listProducts } from '../../services/products.api'
+import {
+  createProduct,
+  getProduct,
+  listProducts,
+  updateProduct,
+} from '../../services/products.api'
 import { buildCreateProductInput, buildProduct, buildProductsPage } from '../mocks/product.factory'
-import { productsUrl } from '../mocks/products.handlers'
+import { productUrl, productsUrl } from '../mocks/products.handlers'
 
 const input = buildCreateProductInput()
 
@@ -58,5 +63,64 @@ describe('products.api listProducts', () => {
     server.use(http.get(productsUrl, () => HttpResponse.json({ detail: 'boom' }, { status: 500 })))
 
     await expect(listProducts(1)).rejects.toMatchObject({ status: 500 })
+  })
+})
+
+describe('products.api getProduct', () => {
+  it('GETs /products/{id}/ and returns the product', async () => {
+    const product = buildProduct()
+    let requested: URL | null = null
+    server.use(
+      http.get(productUrl(product.id), ({ request }) => {
+        requested = new URL(request.url)
+        return HttpResponse.json(product)
+      }),
+    )
+
+    const result = await getProduct(product.id)
+
+    expect(result).toEqual(product)
+    expect(requested!.pathname.endsWith(`/products/${product.id}/`)).toBe(true)
+  })
+
+  it('rejects getProduct with status 404 and the detail message', async () => {
+    const id = crypto.randomUUID()
+    server.use(
+      http.get(productUrl(id), () =>
+        HttpResponse.json({ detail: 'Product not found.' }, { status: 404 }),
+      ),
+    )
+
+    await expect(getProduct(id)).rejects.toMatchObject({
+      status: 404,
+      message: 'Product not found.',
+    })
+  })
+})
+
+describe('products.api updateProduct', () => {
+  it('PUTs the body to /products/{id}/ and returns the product', async () => {
+    const product = buildProduct()
+    const input = buildCreateProductInput({ name: 'Keyboard Pro', stock: 8 })
+    let received: { method: string; path: string; body: unknown } | null = null
+    server.use(
+      http.put(productUrl(product.id), async ({ request }) => {
+        received = {
+          method: request.method,
+          path: new URL(request.url).pathname,
+          body: await request.json(),
+        }
+        return HttpResponse.json({ ...product, ...input })
+      }),
+    )
+
+    const result = await updateProduct(product.id, input)
+
+    expect(result).toEqual({ ...product, ...input })
+    expect(received).toEqual({
+      method: 'PUT',
+      path: `/api/products/${product.id}/`,
+      body: input,
+    })
   })
 })

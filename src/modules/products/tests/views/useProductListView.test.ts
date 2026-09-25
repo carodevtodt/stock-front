@@ -29,9 +29,45 @@ describe('useProductListView', () => {
     const { result } = renderListHook()
     await waitFor(() => expect(result.current.status).toBe('failed'))
 
-    act(() => result.current.retry())
+    act(() => {
+      result.current.retry()
+    })
 
     await waitFor(() => expect(result.current.status).toBe('succeeded'))
     expect(pages).toEqual(['1', '1'])
+  })
+
+  it('edit.open sets the product id and onOpenChange(false) clears it', async () => {
+    const { result } = renderListHook()
+    await waitFor(() => expect(result.current.status).toBe('succeeded'))
+
+    act(() => result.current.edit.open('product-1'))
+    expect(result.current.edit.productId).toBe('product-1')
+
+    act(() => result.current.edit.onOpenChange(false))
+    expect(result.current.edit.productId).toBeNull()
+  })
+
+  it('edit.onNotFound fetches the current page again', async () => {
+    const pages: (string | null)[] = []
+    server.use(
+      http.get(productsUrl, ({ request }) => {
+        const page = new URL(request.url).searchParams.get('page')
+        pages.push(page)
+        return HttpResponse.json(buildProductsPage([buildProduct()], { count: 25, page: Number(page) }))
+      }),
+    )
+    const { result } = renderListHook()
+    await waitFor(() => expect(result.current.status).toBe('succeeded'))
+    act(() => {
+      result.current.goToPage(2)
+    })
+    await waitFor(() => expect(result.current.page).toBe(2))
+
+    act(() => {
+      result.current.edit.onNotFound()
+    })
+
+    await waitFor(() => expect(pages).toEqual(['1', '2', '2']))
   })
 })

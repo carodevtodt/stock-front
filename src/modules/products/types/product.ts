@@ -9,13 +9,16 @@ export interface Product {
   updated_at: string
 }
 
-/** Body of `POST /api/products/`. */
-export interface CreateProductInput {
+/** Body of `POST /api/products/` and `PUT /api/products/{id}/` (every field is sent). */
+export interface ProductInput {
   name: string
   description: string | null
   price: string
   stock: number
 }
+
+export type CreateProductInput = ProductInput
+export type UpdateProductInput = ProductInput
 
 /** Raw form values: every input yields a string. */
 export interface ProductFormValues {

@@ -18,6 +18,7 @@ export function ProductListView() {
     onCreated,
     retry,
     form,
+    edit,
   } = useProductListView()
   const isLoading = status === 'idle' || status === 'loading'
   const isEmpty = status === 'succeeded' && count === 0
@@ -30,7 +31,11 @@ export function ProductListView() {
     if (isEmpty) return <ProductsEmptyState onAdd={form.open} />
     return (
       <>
-        <ProductTable products={products} isLoading={isLoading} />
+        <ProductTable
+          products={products}
+          isLoading={isLoading}
+          onEdit={(product) => edit.open(product.id)}
+        />
         {count > 0 && (
           <ProductsPagination
             page={page}
@@ -54,6 +59,12 @@ export function ProductListView() {
         open={form.isOpen}
         onOpenChange={form.onOpenChange}
         onCreated={onCreated}
+      />
+      <ProductFormModal
+        open={edit.productId !== null}
+        productId={edit.productId}
+        onOpenChange={edit.onOpenChange}
+        onNotFound={edit.onNotFound}
       />
     </section>
   )

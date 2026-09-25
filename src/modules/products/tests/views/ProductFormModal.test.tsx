@@ -1,12 +1,13 @@
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { http, HttpResponse } from 'msw'
+import { delay, http, HttpResponse } from 'msw'
+import { Toaster } from '@/shared/components/ui/sonner'
 import { renderWithStore } from '@/test/renderWithStore'
 import { server } from '@/test/server'
 import { ProductFormModal } from '../../views/ProductListView/components/ProductFormModal'
-import type { ProductFormValues } from '../../types/product'
+import type { Product, ProductFormValues } from '../../types/product'
 import { buildProduct } from '../mocks/product.factory'
-import { productsUrl } from '../mocks/products.handlers'
+import { productUrl, productsUrl } from '../mocks/products.handlers'
 
 const validValues: ProductFormValues = {
   name: 'Keyboard',
@@ -153,5 +154,261 @@ describe('ProductFormModal server errors', () => {
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled())
     expect(onOpenChange).not.toHaveBeenCalledWith(false)
+  })
+})
+
+/** Serve `product` at `GET /products/{id}/`; returns the ids of the detail requests. */
+function serveProduct(product: Product) {
+  const requests: string[] = []
+  server.use(
+    http.get(productUrl(product.id), ({ request }) => {
+      requests.push(new URL(request.url).pathname)
+      return HttpResponse.json(product)
+    }),
+  )
+  return requests
+}
+
+function renderEditModal(product: Product) {
+  const user = userEvent.setup()
+  const onOpenChange = vi.fn()
+  const onNotFound = vi.fn()
+  // The Toaster normally lives in the app layout; mount one so toasts can be asserted here.
+  const utils = renderWithStore(
+    <>
+      <ProductFormModal
+        open
+        productId={product.id}
+        onOpenChange={onOpenChange}
+        onNotFound={onNotFound}
+      />
+      <Toaster />
+    </>,
+  )
+  return { user, onOpenChange, onNotFound, ...utils }
+}
+
+/** Wait until the edit form shows the product's name (preload done). */
+async function waitForPreload(name = 'Keyboard') {
+  await waitFor(() => expect(screen.getByLabelText(/^name/i)).toHaveValue(name))
+}
+
+const editedProduct = buildProduct({
+  name: 'Keyboard',
+  description: 'Mechanical keyboard',
+  price: '49.99',
+  stock: 10,
+})
+
+describe('ProductFormModal edit mode', () => {
+  it('requests the product by id and fills the fields', async () => {
+    const requests = serveProduct(editedProduct)
+    renderEditModal(editedProduct)
+
+    expect(await screen.findByRole('dialog', { name: 'Edit product' })).toBeInTheDocument()
+    await waitForPreload()
+    expect(requests).toEqual([`/api/products/${editedProduct.id}/`])
+    expect(screen.getByLabelText(/^description/i)).toHaveValue('Mechanical keyboard')
+    expect(screen.getByLabelText(/^price/i)).toHaveValue('49.99')
+    expect(screen.getByLabelText(/^stock/i)).toHaveValue('10')
+  })
+
+  it('shows skeletons and disables Save while the product loads', async () => {
+    server.use(
+      http.get(productUrl(editedProduct.id), async () => {
+        await delay('infinite')
+        return HttpResponse.json(editedProduct)
+      }),
+    )
+    renderEditModal(editedProduct)
+
+    await screen.findByRole('dialog', { name: 'Edit product' })
+
+    expect(screen.getAllByTestId('product-form-skeleton')).toHaveLength(4)
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(screen.queryByRole('textbox', { name: /^name/i })).not.toBeInTheDocument()
+  })
+
+  it('shows an empty Description when the product has none', async () => {
+    const noDescription = buildProduct({ name: 'Mouse', description: null })
+    serveProduct(noDescription)
+    renderEditModal(noDescription)
+
+    await waitForPreload('Mouse')
+
+    expect(screen.getByLabelText(/^description/i)).toHaveValue('')
+  })
+
+  it('still shows "New product" when no productId is given', async () => {
+    const requests: string[] = []
+    server.use(
+      http.get(`${productsUrl}:id/`, ({ params }) => {
+        requests.push(params.id as string)
+        return HttpResponse.json(editedProduct)
+      }),
+    )
+    renderModal()
+
+    expect(await screen.findByRole('dialog', { name: 'New product' })).toBeInTheDocument()
+    expect(screen.getByLabelText(/^name/i)).toHaveValue('')
+    expect(screen.queryByTestId('product-form-skeleton')).not.toBeInTheDocument()
+    expect(requests).toHaveLength(0)
+  })
+})
+
+/** Record the body of every `PUT /products/{id}/` and answer with the updated product. */
+function recordUpdates(product: Product) {
+  const bodies: unknown[] = []
+  server.use(
+    http.put(productUrl(product.id), async ({ request }) => {
+      const body = (await request.json()) as object
+      bodies.push(body)
+      return HttpResponse.json({ ...product, ...body })
+    }),
+  )
+  return bodies
+}
+
+async function renderLoadedEditModal() {
+  serveProduct(editedProduct)
+  const utils = renderEditModal(editedProduct)
+  await waitForPreload()
+  return utils
+}
+
+describe('ProductFormModal edit saving', () => {
+  it('shows "Name is required." and sends no update when Name is cleared', async () => {
+    const updates = recordUpdates(editedProduct)
+    const { user } = await renderLoadedEditModal()
+
+    await user.clear(screen.getByLabelText(/^name/i))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText('Name is required.')).toBeInTheDocument()
+    expect(updates).toHaveLength(0)
+  })
+
+  it('shows "Price must be greater than 0." and sends no update when Price is 0', async () => {
+    const updates = recordUpdates(editedProduct)
+    const { user } = await renderLoadedEditModal()
+
+    await fillForm(user, { price: '0' })
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText('Price must be greater than 0.')).toBeInTheDocument()
+    expect(updates).toHaveLength(0)
+  })
+
+  it('PUTs the edited product to its id when Save is clicked', async () => {
+    const updates = recordUpdates(editedProduct)
+    const { user } = await renderLoadedEditModal()
+
+    await fillForm(user, {
+      name: 'Keyboard Pro',
+      description: 'Mechanical keyboard, RGB',
+      price: '59.99',
+      stock: '8',
+    })
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(updates).toHaveLength(1))
+    expect(updates[0]).toEqual({
+      name: 'Keyboard Pro',
+      description: 'Mechanical keyboard, RGB',
+      price: '59.99',
+      stock: 8,
+    })
+  })
+
+  it('sends a null description when Description is cleared', async () => {
+    const updates = recordUpdates(editedProduct)
+    const { user } = await renderLoadedEditModal()
+
+    await user.clear(screen.getByLabelText(/^description/i))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(updates).toHaveLength(1))
+    expect(updates[0]).toMatchObject({ description: null })
+  })
+
+  it('disables Save and shows a spinner while the update is saving', async () => {
+    let respond: () => void = () => {}
+    const answered = new Promise<void>((resolve) => (respond = resolve))
+    server.use(
+      http.put(productUrl(editedProduct.id), async () => {
+        await answered
+        return HttpResponse.json(editedProduct)
+      }),
+    )
+    const { user, onOpenChange } = await renderLoadedEditModal()
+
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByRole('button', { name: /saving/i })).toBeDisabled()
+    respond()
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+  })
+})
+
+describe('ProductFormModal edit errors', () => {
+  it('shows the server field error under Price and keeps the edit form open', async () => {
+    server.use(
+      http.put(productUrl(editedProduct.id), () =>
+        HttpResponse.json(
+          { price: ['Ensure that there are no more than 8 digits before the decimal point.'] },
+          { status: 400 },
+        ),
+      ),
+    )
+    const { user, onOpenChange } = await renderLoadedEditModal()
+
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(
+      await screen.findByText('Ensure that there are no more than 8 digits before the decimal point.'),
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText(/^price/i)).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.queryByText('Could not update product.')).not.toBeInTheDocument()
+    expect(onOpenChange).not.toHaveBeenCalledWith(false)
+  })
+
+  it('shows "Could not update product." and keeps the values when the update fails', async () => {
+    server.use(
+      http.put(productUrl(editedProduct.id), () =>
+        HttpResponse.json({ detail: 'boom' }, { status: 500 }),
+      ),
+    )
+    const { user, onOpenChange } = await renderLoadedEditModal()
+
+    await fillForm(user, { name: 'Keyboard Pro' })
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText('Could not update product.')).toBeInTheDocument()
+    expect(screen.getByLabelText(/^name/i)).toHaveValue('Keyboard Pro')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled())
+    expect(onOpenChange).not.toHaveBeenCalledWith(false)
+  })
+
+  it('shows "Could not update product." when the network fails on save', async () => {
+    server.use(http.put(productUrl(editedProduct.id), () => HttpResponse.error()))
+    const { user, onOpenChange } = await renderLoadedEditModal()
+
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText('Could not update product.')).toBeInTheDocument()
+    expect(onOpenChange).not.toHaveBeenCalledWith(false)
+  })
+
+  it('shows "Could not update product." and closes when loading the product fails', async () => {
+    server.use(
+      http.get(productUrl(editedProduct.id), () =>
+        HttpResponse.json({ detail: 'boom' }, { status: 500 }),
+      ),
+    )
+    const { onOpenChange, onNotFound } = renderEditModal(editedProduct)
+
+    expect(await screen.findByText('Could not update product.')).toBeInTheDocument()
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+    expect(onNotFound).not.toHaveBeenCalled()
   })
 })

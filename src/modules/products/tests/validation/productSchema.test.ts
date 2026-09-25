@@ -1,5 +1,11 @@
-import { PRODUCT_MESSAGES as M, productSchema, toCreateProductInput } from '../../validation/productSchema'
+import {
+  PRODUCT_MESSAGES as M,
+  productSchema,
+  toProductInput,
+  toProductFormValues,
+} from '../../validation/productSchema'
 import type { ProductFormValues } from '../../types/product'
+import { buildProduct } from '../mocks/product.factory'
 
 const valid: ProductFormValues = {
   name: 'Keyboard',
@@ -77,9 +83,9 @@ describe('productSchema', () => {
   })
 })
 
-describe('toCreateProductInput', () => {
+describe('toProductInput', () => {
   it('maps form values to the create input', () => {
-    expect(toCreateProductInput({ ...valid, name: ' Keyboard ' })).toEqual({
+    expect(toProductInput({ ...valid, name: ' Keyboard ' })).toEqual({
       name: 'Keyboard',
       description: 'Mechanical keyboard',
       price: '49.99',
@@ -88,7 +94,22 @@ describe('toCreateProductInput', () => {
   })
 
   it('maps an empty description to null', () => {
-    expect(toCreateProductInput({ ...valid, description: '' }).description).toBeNull()
-    expect(toCreateProductInput({ ...valid, description: '   ' }).description).toBeNull()
+    expect(toProductInput({ ...valid, description: '' }).description).toBeNull()
+    expect(toProductInput({ ...valid, description: '   ' }).description).toBeNull()
+  })
+})
+
+describe('toProductFormValues', () => {
+  it('converts a product into form values', () => {
+    expect(toProductFormValues(buildProduct({ price: '49.99', stock: 10 }))).toEqual({
+      name: 'Keyboard',
+      description: 'Mechanical keyboard',
+      price: '49.99',
+      stock: '10',
+    })
+  })
+
+  it('converts a null description into an empty string', () => {
+    expect(toProductFormValues(buildProduct({ description: null })).description).toBe('')
   })
 })

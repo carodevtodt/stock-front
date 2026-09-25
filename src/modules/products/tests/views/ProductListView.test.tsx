@@ -5,7 +5,7 @@ import { appRoutes } from '@/app/router'
 import { renderWithStore } from '@/test/renderWithStore'
 import { server } from '@/test/server'
 import { LIST_PRODUCTS_ERROR } from '../../constants'
-import type { CreateProductInput, Product } from '../../types/product'
+import type { CreateProductInput, Product, UpdateProductInput } from '../../types/product'
 import { buildProduct, buildProductsPage } from '../mocks/product.factory'
 import { productsUrl } from '../mocks/products.handlers'
 
@@ -87,9 +87,11 @@ function paginationNav() {
   return within(screen.getByRole('navigation', { name: 'pagination' }))
 }
 
+/** Texts of the data cells of a row (Name, Description, Price, Stock); the last cell holds the actions. */
 function rowTexts(row: HTMLElement) {
   return within(row)
     .getAllByRole('cell')
+    .slice(0, -1)
     .map((cell) => cell.textContent)
 }
 
@@ -406,5 +408,191 @@ describe('ProductListView', () => {
 
     expect(await screen.findByText('Could not create product.')).toBeInTheDocument()
     expect(screen.getByRole('dialog', { name: 'New product' })).toBeInTheDocument()
+  })
+})
+
+/**
+ * Stateful fake backend for editing: GET lists `products` in pages of 10, GET/PUT `/products/{id}/`
+ * read and replace one of them. Records the page of every list request and every PUT body.
+ */
+function serveEditableCatalog(products: Product[]) {
+  const catalog = [...products]
+  const pages: string[] = []
+  const updates: { id: string; body: UpdateProductInput }[] = []
+  server.use(
+    http.get(productsUrl, ({ request }) => {
+      const page = Number(new URL(request.url).searchParams.get('page'))
+      pages.push(String(page))
+      const results = catalog.slice((page - 1) * 10, page * 10)
+      return HttpResponse.json(buildProductsPage(results, { count: catalog.length, page }))
+    }),
+    http.get(`${productsUrl}:id/`, ({ params }) => {
+      const product = catalog.find((p) => p.id === params.id)
+      if (!product) return HttpResponse.json({ detail: 'Product not found.' }, { status: 404 })
+      return HttpResponse.json(product)
+    }),
+    http.put(`${productsUrl}:id/`, async ({ params, request }) => {
+      const body = (await request.json()) as UpdateProductInput
+      updates.push({ id: params.id as string, body })
+      const index = catalog.findIndex((p) => p.id === params.id)
+      if (index === -1) return HttpResponse.json({ detail: 'Product not found.' }, { status: 404 })
+      catalog[index] = { ...catalog[index], ...body, updated_at: '2026-09-25T09:30:00Z' }
+      return HttpResponse.json(catalog[index])
+    }),
+  )
+  return { catalog, pages, updates }
+}
+
+const keyboard = () =>
+  buildProduct({ name: 'Keyboard', description: 'Mechanical keyboard', price: '49.99', stock: 10 })
+const mouse = () => buildProduct({ name: 'Mouse', description: null, price: '19.90', stock: 0 })
+
+/** Click the row's Edit button and wait until the form is preloaded with `name`. */
+async function openEditForm(user: ReturnType<typeof userEvent.setup>, name: string) {
+  await user.click(await screen.findByRole('button', { name: `Edit ${name}` }))
+  const dialog = await screen.findByRole('dialog', { name: 'Edit product' })
+  await waitFor(() => expect(screen.getByLabelText(/^name/i)).toHaveValue(name))
+  return dialog
+}
+
+describe('ProductListView edit', () => {
+  it('shows an Edit button named after the product in each row', async () => {
+    serveEditableCatalog([keyboard(), mouse()])
+    renderProductsPage()
+
+    const rows = await findProductRows()
+
+    expect(within(rows[0]).getByRole('button', { name: 'Edit Keyboard' })).toBeInTheDocument()
+    expect(within(rows[1]).getByRole('button', { name: 'Edit Mouse' })).toBeInTheDocument()
+  })
+
+  it('opens "Edit product" preloaded with the row\'s product when Edit is clicked', async () => {
+    serveEditableCatalog([keyboard(), mouse()])
+    const { user } = renderProductsPage()
+
+    await openEditForm(user, 'Keyboard')
+
+    expect(screen.getByLabelText(/^name/i)).toHaveValue('Keyboard')
+    expect(screen.getByLabelText(/^description/i)).toHaveValue('Mechanical keyboard')
+    expect(screen.getByLabelText(/^price/i)).toHaveValue('49.99')
+    expect(screen.getByLabelText(/^stock/i)).toHaveValue('10')
+  })
+
+  it('closes the edit form without an update request when Cancel is clicked', async () => {
+    const { updates } = serveEditableCatalog([keyboard()])
+    const { user } = renderProductsPage()
+    await openEditForm(user, 'Keyboard')
+
+    await user.type(screen.getByLabelText(/^name/i), ' Pro')
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(updates).toHaveLength(0)
+    expect(rowTexts((await findProductRows())[0])[0]).toBe('Keyboard')
+  })
+
+  it('shows the second product\'s values after editing another one', async () => {
+    serveEditableCatalog([keyboard(), mouse()])
+    const { user } = renderProductsPage()
+    await openEditForm(user, 'Keyboard')
+    await user.clear(screen.getByLabelText(/^name/i))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await screen.findByText('Name is required.')
+
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await openEditForm(user, 'Mouse')
+
+    expect(screen.getByLabelText(/^description/i)).toHaveValue('')
+    expect(screen.getByLabelText(/^price/i)).toHaveValue('19.90')
+    expect(screen.getByLabelText(/^stock/i)).toHaveValue('0')
+    expect(screen.queryByText('Name is required.')).not.toBeInTheDocument()
+  })
+
+  it('opens an empty New product form after an edit was closed', async () => {
+    serveEditableCatalog([keyboard()])
+    const { user } = renderProductsPage()
+    await openEditForm(user, 'Keyboard')
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+    await openForm(user)
+
+    expect(screen.getByLabelText(/^name/i)).toHaveValue('')
+    expect(screen.getByLabelText(/^description/i)).toHaveValue('')
+    expect(screen.getByLabelText(/^price/i)).toHaveValue('')
+    expect(screen.getByLabelText(/^stock/i)).toHaveValue('')
+  })
+})
+
+describe('ProductListView edit saving', () => {
+  it('shows "Product updated.", closes the form and updates the row in place', async () => {
+    const { pages } = serveEditableCatalog([keyboard(), mouse()])
+    const { user } = renderProductsPage()
+    await openEditForm(user, 'Keyboard')
+    const listRequests = pages.length
+
+    await user.type(screen.getByLabelText(/^name/i), ' Pro')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText('Product updated.')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    const rows = await findProductRows()
+    expect(rowTexts(rows[0])).toEqual(['Keyboard Pro', 'Mechanical keyboard', '49.99', '10'])
+    expect(rowTexts(rows[1])[0]).toBe('Mouse')
+    expect(pages).toHaveLength(listRequests)
+  })
+
+  it('keeps page 2 and shows the updated row after editing on page 2', async () => {
+    const catalog = Array.from({ length: 25 }, (_, i) => buildProduct({ name: `Product ${i + 1}` }))
+    serveEditableCatalog(catalog)
+    const { user } = renderProductsPage()
+    await screen.findByText('Showing 1–10 of 25')
+    await user.click(paginationNav().getByRole('link', { name: /next/i }))
+    await screen.findByText('Showing 11–20 of 25')
+    await openEditForm(user, 'Product 11')
+
+    await user.type(screen.getByLabelText(/^name/i), ' edited')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText('Product updated.')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(rowTexts(screen.getAllByRole('row')[1])[0]).toBe('Product 11 edited'),
+    )
+    expect(paginationNav().getByRole('link', { name: '2' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByText('Showing 11–20 of 25')).toBeInTheDocument()
+  })
+})
+
+describe('ProductListView edit not found', () => {
+  it('shows "Product not found.", closes the form and reloads the page when the product is gone on open', async () => {
+    const { catalog, pages } = serveEditableCatalog([keyboard(), mouse()])
+    const { user } = renderProductsPage()
+    await findProductRows()
+    catalog.splice(0, 1) // deleted by someone else after the list loaded
+    const listRequests = pages.length
+
+    await user.click(screen.getByRole('button', { name: 'Edit Keyboard' }))
+
+    expect(await screen.findByText('Product not found.')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await waitFor(() => expect(pages.slice(listRequests)).toEqual(['1']))
+    await waitFor(() => expect(rowTexts((screen.getAllByRole('row'))[1])[0]).toBe('Mouse'))
+  })
+
+  it('shows "Product not found.", closes the form and reloads the page when the product is gone on save', async () => {
+    const { catalog } = serveEditableCatalog([keyboard(), mouse()])
+    const { user } = renderProductsPage()
+    await openEditForm(user, 'Keyboard')
+    catalog.splice(0, 1) // deleted by someone else while the form is open
+
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText('Product not found.')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    await waitFor(() => {
+      const rows = within(screen.getByRole('table')).getAllByRole('row').slice(1)
+      expect(rows.map((row) => rowTexts(row)[0])).toEqual(['Mouse'])
+    })
   })
 })

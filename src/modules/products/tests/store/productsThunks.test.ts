@@ -1,9 +1,14 @@
 import { http, HttpResponse } from 'msw'
 import { makeStore } from '@/app/store'
 import { server } from '@/test/server'
-import { createProduct, fetchProducts } from '../../store/productsThunks'
+import {
+  createProduct,
+  fetchProduct,
+  fetchProducts,
+  updateProduct,
+} from '../../store/productsThunks'
 import { buildCreateProductInput, buildProduct, buildProductsPage } from '../mocks/product.factory'
-import { productsUrl } from '../mocks/products.handlers'
+import { productUrl, productsUrl } from '../mocks/products.handlers'
 
 const input = buildCreateProductInput({ description: null })
 
@@ -58,6 +63,59 @@ describe('fetchProducts thunk', () => {
     const result = await store.dispatch(fetchProducts(1))
 
     expect(fetchProducts.rejected.match(result)).toBe(true)
+    expect(result.payload).toMatchObject({ status: 500 })
+  })
+})
+
+describe('fetchProduct thunk', () => {
+  it('fulfills fetchProduct with the product', async () => {
+    const product = buildProduct()
+    server.use(http.get(productUrl(product.id), () => HttpResponse.json(product)))
+    const store = makeStore()
+
+    const result = await store.dispatch(fetchProduct(product.id))
+
+    expect(fetchProduct.fulfilled.match(result)).toBe(true)
+    expect(result.payload).toEqual(product)
+  })
+
+  it('rejects fetchProduct with status 404', async () => {
+    const id = crypto.randomUUID()
+    server.use(
+      http.get(productUrl(id), () =>
+        HttpResponse.json({ detail: 'Product not found.' }, { status: 404 }),
+      ),
+    )
+    const store = makeStore()
+
+    const result = await store.dispatch(fetchProduct(id))
+
+    expect(fetchProduct.rejected.match(result)).toBe(true)
+    expect(result.payload).toMatchObject({ status: 404 })
+  })
+})
+
+describe('updateProduct thunk', () => {
+  it('fulfills updateProduct with the updated product', async () => {
+    const product = buildProduct()
+    const store = makeStore()
+
+    const result = await store.dispatch(
+      updateProduct({ id: product.id, input: { ...input, name: 'Keyboard Pro' } }),
+    )
+
+    expect(updateProduct.fulfilled.match(result)).toBe(true)
+    expect(result.payload).toMatchObject({ id: product.id, name: 'Keyboard Pro' })
+  })
+
+  it('rejects updateProduct with the ApiError on 500', async () => {
+    const id = crypto.randomUUID()
+    server.use(http.put(productUrl(id), () => HttpResponse.json({ detail: 'boom' }, { status: 500 })))
+    const store = makeStore()
+
+    const result = await store.dispatch(updateProduct({ id, input }))
+
+    expect(updateProduct.rejected.match(result)).toBe(true)
     expect(result.payload).toMatchObject({ status: 500 })
   })
 })

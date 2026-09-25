@@ -1,7 +1,7 @@
 import { createSlice } from '@reduxjs/toolkit'
 import { LIST_PRODUCTS_ERROR, PAGE_SIZE } from '../constants'
 import type { Product } from '../types/product'
-import { createProduct, fetchProducts } from './productsThunks'
+import { createProduct, fetchProducts, updateProduct } from './productsThunks'
 
 export interface ProductsState {
   items: Product[]
@@ -49,6 +49,11 @@ export const productsSlice = createSlice({
         state.items = [action.payload, ...state.items].slice(0, PAGE_SIZE)
         state.count += 1
         state.status = 'succeeded'
+      })
+      // Edits keep created_at, so the product stays in its place in the newest-first list.
+      .addCase(updateProduct.fulfilled, (state, action) => {
+        const index = state.items.findIndex((item) => item.id === action.payload.id)
+        if (index !== -1) state.items[index] = action.payload
       })
   },
 })

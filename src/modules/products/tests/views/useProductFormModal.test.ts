@@ -1,11 +1,12 @@
-import { act, renderHook } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { createElement, type ComponentProps, type ReactNode } from 'react'
 import { Provider } from 'react-redux'
 import { makeStore } from '@/app/store'
 import { server } from '@/test/server'
 import { useProductFormModal } from '../../views/ProductListView/components/ProductFormModal/useProductFormModal'
-import { productsUrl } from '../mocks/products.handlers'
+import { buildProduct } from '../mocks/product.factory'
+import { productUrl, productsUrl } from '../mocks/products.handlers'
 
 function renderFormHook() {
   const store = makeStore()
@@ -59,5 +60,36 @@ describe('useProductFormModal', () => {
     await act(() => result.current.onSubmit())
 
     expect(onCreated).not.toHaveBeenCalled()
+  })
+})
+
+describe('useProductFormModal edit mode', () => {
+  it('ignores a product response that arrives after the form was closed', async () => {
+    const first = buildProduct({ name: 'First' })
+    const second = buildProduct({ name: 'Second' })
+    let answerFirst: () => void = () => {}
+    const firstAnswered = new Promise<void>((resolve) => (answerFirst = resolve))
+    server.use(
+      http.get(productUrl(first.id), async () => {
+        await firstAnswered
+        return HttpResponse.json(first)
+      }),
+      http.get(productUrl(second.id), () => HttpResponse.json(second)),
+    )
+    const store = makeStore()
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(Provider, { store } as ComponentProps<typeof Provider>, children)
+    const { result, rerender } = renderHook(
+      ({ productId }: { productId: string }) =>
+        useProductFormModal({ productId, onOpenChange: vi.fn() }),
+      { wrapper, initialProps: { productId: first.id } },
+    )
+
+    rerender({ productId: second.id })
+    await waitFor(() => expect(result.current.form.getValues('name')).toBe('Second'))
+    answerFirst()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    expect(result.current.form.getValues('name')).toBe('Second')
   })
 })

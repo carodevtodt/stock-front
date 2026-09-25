@@ -19,6 +19,7 @@ export function useProductListView() {
   const totalPages = useAppSelector(selectTotalPages)
   const error = useAppSelector(selectProductsError)
   const [isFormOpen, setFormOpen] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
 
   useEffect(() => {
     dispatch(fetchProducts(1))
@@ -41,6 +42,14 @@ export function useProductListView() {
       isOpen: isFormOpen,
       open: () => setFormOpen(true),
       onOpenChange: setFormOpen,
+    },
+    edit: {
+      productId: editingId,
+      open: (id: string) => setEditingId(id),
+      onOpenChange: (open: boolean) => {
+        if (!open) setEditingId(null)
+      },
+      onNotFound: () => dispatch(fetchProducts(page)),
     },
   }
 }

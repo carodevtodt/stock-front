@@ -2,13 +2,20 @@ import { Toaster as Sonner } from 'sonner'
 
 type ToasterProps = React.ComponentProps<typeof Sonner>
 
+// Sonner defines its own `--success-bg` (a full hsl() color) on the toaster, which clashes with
+// our design token of the same name and turns `hsl(var(--success-bg))` invalid (a transparent
+// toast). Inheriting keeps the token from :root inside the toaster.
+const TOKEN_OVERRIDES = { '--success-bg': 'inherit' } as React.CSSProperties
+
 // Feedback colors per docs/design-system.md: green = success, red = error.
 // The app has no dark-mode switch yet, so the toaster follows the light theme.
 const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner
       theme="light"
+      position="top-right"
       className="toaster group"
+      style={TOKEN_OVERRIDES}
       toastOptions={{
         classNames: {
           toast:

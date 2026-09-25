@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { CreateProductInput, ProductFormValues } from '../types/product'
+import type { Product, ProductFormValues, ProductInput } from '../types/product'
 
 /** Client-side field messages (docs: product-ui spec). */
 export const PRODUCT_MESSAGES = {
@@ -54,13 +54,23 @@ export const productSchema = z.object({
   stock,
 })
 
-/** Convert valid form values into the API body. */
-export function toCreateProductInput(values: ProductFormValues): CreateProductInput {
+/** Convert valid form values into the API body (create and update). */
+export function toProductInput(values: ProductFormValues): ProductInput {
   const description = values.description.trim()
   return {
     name: values.name.trim(),
     description: description || null,
     price: values.price.trim(),
     stock: Number.parseInt(values.stock, 10),
+  }
+}
+
+/** Convert a product from the API into form values (the reverse of the input conversion). */
+export function toProductFormValues(product: Product): ProductFormValues {
+  return {
+    name: product.name,
+    description: product.description ?? '',
+    price: product.price,
+    stock: String(product.stock),
   }
 }

@@ -1,3 +1,5 @@
+import { Pencil } from 'lucide-react'
+import { Button } from '@/shared/components/ui/button'
 import { Skeleton } from '@/shared/components/ui/skeleton'
 import {
   Table,
@@ -11,14 +13,15 @@ import { PAGE_SIZE } from '../../../../constants'
 import type { Product } from '../../../../types/product'
 
 const SKELETON_ROWS = PAGE_SIZE
-const COLUMNS = 4
+const COLUMNS = 5
 
 interface Props {
   products: Product[]
   isLoading?: boolean
+  onEdit: (product: Product) => void
 }
 
-export function ProductTable({ products, isLoading = false }: Props) {
+export function ProductTable({ products, isLoading = false, onEdit }: Props) {
   return (
     <Table>
       <TableHeader className="bg-muted">
@@ -27,6 +30,9 @@ export function ProductTable({ products, isLoading = false }: Props) {
           <TableHead>Description</TableHead>
           <TableHead className="text-right">Price</TableHead>
           <TableHead className="text-right">Stock</TableHead>
+          <TableHead className="w-0">
+            <span className="sr-only">Actions</span>
+          </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody aria-busy={isLoading}>
@@ -46,6 +52,18 @@ export function ProductTable({ products, isLoading = false }: Props) {
                 <TableCell>{product.description ?? '—'}</TableCell>
                 <TableCell className="text-right">{product.price}</TableCell>
                 <TableCell className="text-right">{product.stock}</TableCell>
+                <TableCell>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      aria-label={`Edit ${product.name}`}
+                      onClick={() => onEdit(product)}
+                    >
+                      <Pencil aria-hidden />
+                    </Button>
+                  </div>
+                </TableCell>
               </TableRow>
             ))}
       </TableBody>
