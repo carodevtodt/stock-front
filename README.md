@@ -39,6 +39,27 @@ Requires Node.js 20.19+ and the OpenSpec CLI: `npm install -g @fission-ai/opensp
 
 The registration is saved locally on your machine, not in git, so each teammate runs it once.
 
+## Run and test
+
+Requires Node.js 20.19+.
+
+```bash
+cp .env.example .env                 # once; VITE_API_URL points at the backend
+npm install
+npm run dev                          # http://localhost:5173
+npm run test                         # Vitest in watch mode
+npm run test -- --run --coverage     # single run with coverage (CI)
+npm run lint
+npm run build
+```
+
+Deploy image (nginx, non-root, listens on 8080). `VITE_API_URL` is baked in at build time:
+
+```bash
+docker build --build-arg VITE_API_URL=https://api.example.com/api -t stock-front .
+docker run -d -p 8080:8080 stock-front    # http://localhost:8080
+```
+
 ## Working on this repo
 
 - Plan and implement from the store: open Claude Code or OpenCode in `../store` and use `/opsx:propose`, `/opsx:apply` and `/opsx:archive`. `/opsx:apply` writes the code here for tasks prefixed `[frontend]`.
