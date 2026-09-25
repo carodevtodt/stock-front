@@ -26,9 +26,11 @@ function applyServerFieldErrors(form: UseFormReturn<ProductFormValues>, error: A
 
 interface Options {
   onOpenChange: (open: boolean) => void
+  /** Called after a product was created (toast shown, modal closed). */
+  onCreated?: () => void
 }
 
-export function useProductFormModal({ onOpenChange }: Options) {
+export function useProductFormModal({ onOpenChange, onCreated }: Options) {
   const dispatch = useAppDispatch()
   const form = useForm<ProductFormValues>({
     resolver: zodResolver(productSchema),
@@ -49,6 +51,7 @@ export function useProductFormModal({ onOpenChange }: Options) {
     }
     toast.success(CREATE_PRODUCT_TOASTS.success)
     handleOpenChange(false)
+    onCreated?.()
   })
 
   return { form, onSubmit, handleOpenChange, isSaving: form.formState.isSubmitting }

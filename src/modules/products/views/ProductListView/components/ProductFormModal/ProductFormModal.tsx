@@ -23,10 +23,15 @@ import { useProductFormModal } from './useProductFormModal'
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Called after a product was created (toast shown, modal closed). */
+  onCreated?: () => void
 }
 
-export function ProductFormModal({ open, onOpenChange }: Props) {
-  const { form, onSubmit, handleOpenChange, isSaving } = useProductFormModal({ onOpenChange })
+export function ProductFormModal({ open, onOpenChange, onCreated }: Props) {
+  const { form, onSubmit, handleOpenChange, isSaving } = useProductFormModal({
+    onOpenChange,
+    onCreated,
+  })
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>

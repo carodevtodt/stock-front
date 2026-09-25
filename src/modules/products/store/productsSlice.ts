@@ -1,6 +1,7 @@
 import { createSlice } from '@reduxjs/toolkit'
+import { LIST_PRODUCTS_ERROR, PAGE_SIZE } from '../constants'
 import type { Product } from '../types/product'
-import { createProduct } from './productsThunks'
+import { createProduct, fetchProducts } from './productsThunks'
 
 export interface ProductsState {
   items: Product[]
@@ -23,9 +24,31 @@ export const productsSlice = createSlice({
   initialState,
   reducers: {},
   extraReducers: (builder) => {
-    builder.addCase(createProduct.fulfilled, (state, action) => {
-      state.items.unshift(action.payload)
-      state.count += 1
-    })
+    builder
+      .addCase(fetchProducts.pending, (state, action) => {
+        state.status = 'loading'
+        state.error = null
+        state.page = action.meta.arg
+      })
+      // A response for a page the user already left (e.g. a quick second click) is ignored.
+      .addCase(fetchProducts.fulfilled, (state, action) => {
+        if (action.meta.arg !== state.page) return
+        state.items = action.payload.results
+        state.count = action.payload.count
+        state.status = 'succeeded'
+      })
+      .addCase(fetchProducts.rejected, (state, action) => {
+        if (action.meta.arg !== state.page) return
+        state.status = 'failed'
+        state.error = LIST_PRODUCTS_ERROR
+      })
+      // Newest first: on page 1 the created product goes on top at once. On other pages the view
+      // reloads page 1 instead (see useProductListView).
+      .addCase(createProduct.fulfilled, (state, action) => {
+        if (state.page !== 1) return
+        state.items = [action.payload, ...state.items].slice(0, PAGE_SIZE)
+        state.count += 1
+        state.status = 'succeeded'
+      })
   },
 })

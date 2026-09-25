@@ -1,8 +1,8 @@
 import { http, HttpResponse } from 'msw'
 import { makeStore } from '@/app/store'
 import { server } from '@/test/server'
-import { createProduct } from '../../store/productsThunks'
-import { buildCreateProductInput, buildProduct } from '../mocks/product.factory'
+import { createProduct, fetchProducts } from '../../store/productsThunks'
+import { buildCreateProductInput, buildProduct, buildProductsPage } from '../mocks/product.factory'
 import { productsUrl } from '../mocks/products.handlers'
 
 const input = buildCreateProductInput({ description: null })
@@ -34,5 +34,30 @@ describe('createProduct thunk', () => {
       status: 400,
       fieldErrors: { name: ['This field may not be blank.'] },
     })
+  })
+})
+
+describe('fetchProducts thunk', () => {
+  it('fulfills fetchProducts with the page', async () => {
+    const page = buildProductsPage([buildProduct(), buildProduct({ name: 'Mouse' })])
+    server.use(http.get(productsUrl, () => HttpResponse.json(page)))
+    const store = makeStore()
+
+    const result = await store.dispatch(fetchProducts(1))
+
+    expect(fetchProducts.fulfilled.match(result)).toBe(true)
+    expect(result.payload).toEqual(page)
+    expect(store.getState().products).toMatchObject({ status: 'succeeded', count: 2 })
+    expect(store.getState().products.items).toHaveLength(2)
+  })
+
+  it('rejects fetchProducts with the ApiError on 500', async () => {
+    server.use(http.get(productsUrl, () => HttpResponse.json({ detail: 'boom' }, { status: 500 })))
+    const store = makeStore()
+
+    const result = await store.dispatch(fetchProducts(1))
+
+    expect(fetchProducts.rejected.match(result)).toBe(true)
+    expect(result.payload).toMatchObject({ status: 500 })
   })
 })

@@ -24,3 +24,11 @@ export interface ProductFormValues {
   price: string
   stock: string
 }
+
+/** Page of a paginated list endpoint (`GET /api/products/?page=N`). */
+export interface Paginated<T> {
+  count: number
+  next: string | null
+  previous: string | null
+  results: T[]
+}
