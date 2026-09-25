@@ -1,0 +1,9 @@
+# Planning for this repo is externalized to the OpenSpec store "store"
+# (https://github.com/carodevtodt/stock-store). Specs, changes and product
+# docs live there; this file only points OpenSpec at it.
+#
+# One-time setup per machine (clone the store next to this repo):
+#   git clone https://github.com/carodevtodt/stock-store.git ../store
+#   openspec store register ../store
+#   openspec doctor        # should report "Using OpenSpec root: store"
+store: store
