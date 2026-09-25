@@ -9,6 +9,13 @@ describe('app routing', () => {
     expect(await screen.findByRole('heading', { name: 'Product Management' })).toBeInTheDocument()
   })
 
+  it('redirects / to /products', async () => {
+    const { router } = renderWithStore(null, { routes: appRoutes, route: '/' })
+
+    expect(await screen.findByRole('button', { name: /add product/i })).toBeInTheDocument()
+    expect(router.state.location.pathname).toBe('/products')
+  })
+
   it('shows "Page not found." with a link home on an unknown route', async () => {
     renderWithStore(null, { routes: appRoutes, route: '/does-not-exist' })
 

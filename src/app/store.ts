@@ -1,7 +1,8 @@
 import { combineSlices, configureStore } from '@reduxjs/toolkit'
+import { productsSlice } from '@/modules/products/store/productsSlice'
 
 // Feature modules register their slices here (e.g. `combineSlices(productsSlice)`).
-export const rootReducer = combineSlices()
+export const rootReducer = combineSlices(productsSlice)
 
 export const makeStore = (preloadedState?: Partial<RootState>) =>
   configureStore({ reducer: rootReducer, preloadedState })

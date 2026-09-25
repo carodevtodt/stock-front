@@ -1,4 +1,5 @@
-import { createBrowserRouter, type RouteObject } from 'react-router-dom'
+import { createBrowserRouter, Navigate, type RouteObject } from 'react-router-dom'
+import { productsRoutes } from '@/modules/products'
 import { NotFound } from './layout/NotFound'
 import { RootLayout } from './layout/RootLayout'
 
@@ -8,7 +9,8 @@ export const appRoutes: RouteObject[] = [
     path: '/',
     element: <RootLayout />,
     children: [
-      { index: true, element: null },
+      { index: true, element: <Navigate to="/products" replace /> },
+      ...productsRoutes,
       { path: '*', element: <NotFound /> },
     ],
   },
